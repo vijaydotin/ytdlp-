@@ -329,9 +329,10 @@ class MusicServerHandler(http.server.SimpleHTTPRequestHandler):
                     f'ytsearch15:{query}',
                     '--dump-single-json',
                     '--flat-playlist',
-                    '--no-warnings'
+                    '--no-warnings',
+                    *YTDLP_EXTRA
                 ]
-                res = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
                 if res.returncode != 0:
                     if attempt == 0:
                         continue
@@ -386,7 +387,7 @@ class MusicServerHandler(http.server.SimpleHTTPRequestHandler):
             # Flat extraction is fast (single request, no per-video fetch) and
             # still gives us id/title for every entry.
             cmd = ['yt-dlp', url, '--flat-playlist', '--dump-single-json',
-                   '--no-warnings', '--skip-download']
+                   '--no-warnings', '--skip-download', *YTDLP_EXTRA]
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
             if res.returncode != 0:
                 return 'Could not load that YouTube link'
@@ -1008,7 +1009,7 @@ class MusicServerHandler(http.server.SimpleHTTPRequestHandler):
             return {'quality': fmt, 'size': hit[1], 'duration': hit[0]}
         try:
             url = f'https://www.youtube.com/watch?v={video_id}'
-            cmd = ['yt-dlp', '-f', selector, '--no-playlist', '--no-warnings', '-g', url]
+            cmd = ['yt-dlp', '-f', selector, '--no-playlist', '--no-warnings', '-g', url, *YTDLP_EXTRA]
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=40)
             direct = res.stdout.strip().splitlines()[0] if res.returncode == 0 and res.stdout.strip() else ''
             if not direct:
