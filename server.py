@@ -907,10 +907,17 @@ class MusicServerHandler(http.server.SimpleHTTPRequestHandler):
         # Temporary debugging override: `?player=tv` etc. swaps the YouTube
         # player client for the current request (datacenter IPs are flagged
         # differently per client). 'default'/'empty' -> the configured set.
-        if not player or player == 'default':
-            return list(YTDLP_EXTRA)
-        extra = [a for a in YTDLP_EXTRA if 'player_client' not in a]
-        extra += ['--extractor-args', f'youtube:player_client={player}']
+        extra = []
+        args = list(YTDLP_EXTRA)
+        i = 0
+        while i < len(args):
+            if args[i] == '--extractor-args':
+                i += 2
+                continue
+            extra.append(args[i])
+            i += 1
+        if player and player != 'default':
+            extra += ['--extractor-args', f'youtube:player_client={player}']
         return extra
 
     def _start_download(self, part_path, watch_url, selector, player=''):
