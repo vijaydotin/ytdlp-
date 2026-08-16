@@ -27,7 +27,7 @@ ENV YTDLP_EXTRA=""
 
 EXPOSE 8765
 
-HEALTHCHECK --interval=60s --timeout=5s --start-period=30s \
-  CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/health', timeout=4)" || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s \
+  CMD python3 -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:'+os.environ.get('PORT','8765')+'/api/health', timeout=4)" || exit 1
 
 CMD ["python3", "server.py"]
