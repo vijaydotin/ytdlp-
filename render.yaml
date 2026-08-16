@@ -1,0 +1,15 @@
+# Render Blueprint — Spotily yt-dlp API (API only, no static app).
+# Deploy: render.com -> New -> Blueprint -> connect this repo (GitHub/GitLab).
+# Free tier notes: spins down after 15 min idle (a keepalive ping fixes this),
+# 750 instance-hours/month, 512MB RAM / 0.1 CPU, 5GB/month included bandwidth
+# (overages BILL even on free) — keep use light or set a spend limit.
+services:
+  - type: web
+    name: spotily-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: YTDLP_EXTRA
+        value: --extractor-args youtube:player_client=android
