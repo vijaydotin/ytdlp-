@@ -72,6 +72,10 @@ def _debug(msg):
 # requests for the same track share one download instead of duplicating work.
 _ACTIVE_DOWNLOADS = {}
 _DL_LOCK = threading.Lock()
+# Free-tier containers are memory-tight (512 MB): yt-dlp + the Deno JS runtime
+# for YouTube challenge solving can peak near ~300 MB each, so only ever run
+# one download at a time to stay under the OOM killer's threshold.
+_DL_SEM = threading.Semaphore(1)
 
 # Spotify's embed page still server-renders the full track list for public
 # playlists/charts, so no login or API credentials are needed.
@@ -908,12 +912,13 @@ class MusicServerHandler(http.server.SimpleHTTPRequestHandler):
         def worker():
             t0 = time.time()
             try:
-                res = subprocess.run(
-                    ['yt-dlp', '-f', selector, '--no-playlist', '--no-warnings',
-                     '--concurrent-fragments', '4', *YTDLP_EXTRA,
-                     '-o', final_path, watch_url],
-                    capture_output=True, text=True, timeout=300)
-                dur = time.time() - t0
+                with _DL_SEM:
+                    res = subprocess.run(
+                        ['yt-dlp', '-f', selector, '--no-playlist', '--no-warnings',
+                         '--concurrent-fragments', '4', *YTDLP_EXTRA,
+                         '-o', final_path, watch_url],
+                        capture_output=True, text=True, timeout=300)
+                    dur = time.time() - t0
                 if res.returncode == 0:
                     _debug(f'DL OK {final_path} dur={dur:.1f}s')
                 else:

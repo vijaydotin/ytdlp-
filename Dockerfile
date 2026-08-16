@@ -24,6 +24,8 @@ ENV PYTHONUNBUFFERED=1
 # No player_client override: default (web) client + cookies + Deno solves
 # YouTube's JS challenges. Override per-host with YTDLP_EXTRA if needed.
 ENV YTDLP_EXTRA=""
+# Cap Deno's V8 heap so challenge solving stays under the 512 MB free tier.
+ENV DENO_V8_FLAGS="--max-old-space-size=128"
 
 EXPOSE 8765
 
