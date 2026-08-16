@@ -14,6 +14,7 @@ import re
 import threading
 import base64
 import tempfile
+import shutil
 
 PORT = int(os.environ.get('PORT', '8765'))
 
@@ -24,6 +25,20 @@ YTDLP_EXTRA = []
 _env_extra = os.environ.get('YTDLP_EXTRA', '').strip()
 if _env_extra:
     YTDLP_EXTRA = [a for a in _env_extra.split() if a]
+
+# Hosted deployments may mount a YouTube cookies file (Render mounts secret
+# files read-only at /etc/secrets/<name>). yt-dlp likes to rewrite cookie
+# files, so copy the secret to a writable temp path once at startup and add
+# `--cookies` automatically. Set YTDLP_COOKIE_SECRET=/etc/secrets/<name>.
+_COOKIE_SRC = os.environ.get('YTDLP_COOKIE_SECRET', '/etc/secrets/youtube_cookies.txt')
+COOKIES_PATH = os.path.join(tempfile.gettempdir(), 'spotily_youtube_cookies.txt')
+if os.path.exists(_COOKIE_SRC):
+    try:
+        shutil.copyfile(_COOKIE_SRC, COOKIES_PATH)
+        os.chmod(COOKIES_PATH, 0o600)
+        YTDLP_EXTRA += ['--cookies', COOKIES_PATH]
+    except Exception as err:
+        print(f'Cookie setup error: {err}', flush=True)
 
 # Streamed songs are cached on disk so the server can serve HTTP Range
 # requests (enabling seek) while keeping the audio same-origin (so the
