@@ -227,7 +227,8 @@ class MusicServerHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_error(400, 'Missing video id')
                 return
             fmt = query_params.get('format', ['High'])[0].strip()
-            self.stream_audio(video_id, fmt)
+            player = query_params.get('player', [''])[0].strip()
+            self.stream_audio(video_id, fmt, player=player)
             return
 
         # Download: waits for the FULL file then serves it (for offline saving).
@@ -238,7 +239,8 @@ class MusicServerHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_error(400, 'Missing video id')
                 return
             fmt = query_params.get('format', ['High'])[0].strip()
-            self.download_audio(video_id, fmt)
+            player = query_params.get('player', [''])[0].strip()
+            self.download_audio(video_id, fmt, player=player)
             return
 
         # Preload: start the background download early (next-track warm-ahead),
@@ -250,7 +252,8 @@ class MusicServerHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json({'error': 'Missing video id'})
                 return
             fmt = query_params.get('format', ['High'])[0].strip()
-            self.preload_audio(video_id, fmt)
+            player = query_params.get('player', [''])[0].strip()
+            self.preload_audio(video_id, fmt, player=player)
             return
 
         # Info: per-quality sizes/duration for the download picker.
@@ -831,16 +834,16 @@ class MusicServerHandler(http.server.SimpleHTTPRequestHandler):
         'High':   'ba/b',
     }
 
-    def stream_audio(self, video_id, fmt='High'):
+    def stream_audio(self, video_id, fmt='High', player=''):
         # Deterministic playback: the whole file is downloaded (background
         # yt-dlp) then served with Range support. Progressive byte-streaming
         # through the Cloudflare tunnel silently failed on phones (206 chunk
         # races), so playback now waits for the complete file — it is small
         # (3-6 MB opus) and `/api/preload` kicks off downloads ahead of play,
         # so the wait is usually zero and at most a few seconds.
-        self._download_then_serve(video_id, fmt)
+        self._download_then_serve(video_id, fmt, player)
 
-    def _download_then_serve(self, video_id, fmt):
+    def _download_then_serve(self, video_id, fmt, player=''):
         rng = self.headers.get('Range')
         _debug(f'STREAM id={video_id} fmt={fmt} rng={rng!r} ua={self.headers.get("User-Agent", "")[:40]}')
         try:
@@ -859,7 +862,7 @@ class MusicServerHandler(http.server.SimpleHTTPRequestHandler):
             # 2) Start the background download, wait for the full file (yt-dlp
             #    renames `.part` -> final when done), then serve it whole.
             url = f'https://www.youtube.com/watch?v={video_id}'
-            self._start_download(part, url, selector)
+            self._start_download(part, url, selector, player=player)
             _debug(f'CACHE MISS id={video_id} fmt={fmt} waiting for download')
 
             t0 = time.time()
@@ -883,7 +886,7 @@ class MusicServerHandler(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 pass
 
-    def preload_audio(self, video_id, fmt='High'):
+    def preload_audio(self, video_id, fmt='High', player=''):
         # Fire-and-forget: start the background yt-dlp download if it isn't
         # cached yet, so the next play request gets the file immediately.
         try:
@@ -894,16 +897,27 @@ class MusicServerHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json({'ok': True, 'cached': True})
                 return
             url = f'https://www.youtube.com/watch?v={video_id}'
-            self._start_download(part, url, selector)
+            self._start_download(part, url, selector, player=player)
             self.send_json({'ok': True, 'cached': False})
         except Exception as err:
             print('Preload error:', err)
             self.send_json({'error': 'preload failed'})
 
-    def _start_download(self, part_path, watch_url, selector):
+    def _ytdlp_extra_for(self, player):
+        # Temporary debugging override: `?player=tv` etc. swaps the YouTube
+        # player client for the current request (datacenter IPs are flagged
+        # differently per client). 'default'/'empty' -> the configured set.
+        if not player or player == 'default':
+            return list(YTDLP_EXTRA)
+        extra = [a for a in YTDLP_EXTRA if 'player_client' not in a]
+        extra += ['--extractor-args', f'youtube:player_client={player}']
+        return extra
+
+    def _start_download(self, part_path, watch_url, selector, player=''):
         # yt-dlp downloads to `<final>.part` (= `part_path`) and renames it to
         # `final_path` on completion.
         final_path = part_path[:-5] if part_path.endswith('.part') else part_path + '.final'
+        extra = self._ytdlp_extra_for(player)
         with _DL_LOCK:
             if part_path in _ACTIVE_DOWNLOADS:
                 return
@@ -915,7 +929,7 @@ class MusicServerHandler(http.server.SimpleHTTPRequestHandler):
                 with _DL_SEM:
                     res = subprocess.run(
                         ['yt-dlp', '-f', selector, '--no-playlist', '--no-warnings',
-                         '--concurrent-fragments', '4', *YTDLP_EXTRA,
+                         '--concurrent-fragments', '4', *extra,
                          '-o', final_path, watch_url],
                         capture_output=True, text=True, timeout=300)
                     dur = time.time() - t0
@@ -1048,7 +1062,7 @@ class MusicServerHandler(http.server.SimpleHTTPRequestHandler):
             print('Info resolve failed:', err)
             return {'quality': fmt, 'size': None, 'duration': None}
 
-    def download_audio(self, video_id, fmt='High'):
+    def download_audio(self, video_id, fmt='High', player=''):
         # Deterministic full-file download for offline saving: start the
         # background yt-dlp download, wait for it to complete (renames `.part`
         # -> final), then serve the whole cached file with Range support.
@@ -1064,7 +1078,7 @@ class MusicServerHandler(http.server.SimpleHTTPRequestHandler):
                 return
 
             url = f'https://www.youtube.com/watch?v={video_id}'
-            self._start_download(part, url, selector)
+            self._start_download(part, url, selector, player=player)
 
             deadline = time.time() + 180
             while time.time() < deadline:
