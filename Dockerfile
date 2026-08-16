@@ -2,6 +2,17 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Deno JS runtime for yt-dlp's YouTube challenge solving (EJS).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates unzip \
+    && curl -fsSLo /tmp/deno.zip "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip" \
+    && unzip -o /tmp/deno.zip -d /usr/local/bin \
+    && rm /tmp/deno.zip \
+    && apt-get purge -y curl unzip \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/* \
+    && deno --version
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -10,9 +21,9 @@ COPY server.py .
 
 ENV PORT=8765
 ENV PYTHONUNBUFFERED=1
-# Android player client avoids YouTube bot-checks on datacenter IPs.
-# Override per-host with YTDLP_EXTRA if needed.
-ENV YTDLP_EXTRA="--extractor-args youtube:player_client=android"
+# No player_client override: default (web) client + cookies + Deno solves
+# YouTube's JS challenges. Override per-host with YTDLP_EXTRA if needed.
+ENV YTDLP_EXTRA=""
 
 EXPOSE 8765
 
